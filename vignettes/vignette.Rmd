@@ -1,0 +1,244 @@
+---
+title: "massive GST (version 20220316)"
+author: "[S.M. Pagnotta](https://www.researchgate.net/profile/Stefano-Pagnotta-2) - Dept. of Science and Technology, Universit&agrave; degli Studi del Sannio (Benevento, Italy)"
+date: "`r format(Sys.Date(), '%m/%d/%Y')`"
+output:
+  rmarkdown::html_document:
+    highlight: pygments
+    toc: true
+    fig_width: 20
+    fig_height: 13
+    echo: TRUE
+vignette: >
+  %\VignetteIndexEntry{Functional analysis with Mann-Withney-Wilcoxon test}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+  %\usepackage[utf8]{inputenc}
+---
+
+This vignette shows how to use the massiveGST package.
+
+# Installation
+Get the stable release from CRAN  
+
+```{r, eval =FALSE}
+install.packages("massiveGST")
+```
+
+On going bug correction and future improvements are in [github](https://github.com/stefanoMP/massiveGST).
+```{r, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+BiocManager::install("stefanoMP/massiveGST")
+```
+
+# Setup
+```{r setup}
+suppressPackageStartupMessages(library(massiveGST, quietly = TRUE))
+```
+
+## getting gene-profile from a file
+In any cases, the names of the list have to match the gene names in any of their coding (gene-symbol, entrez, ensembl, etc.). To explain some details of the functions, we assume that positive values of the gene-profile are up-regulated in the treatment group, while the negative ones are up-regulated in the control group. In other words, the positive genes are associated with the treatment group, while the others are associated with the control samples. 
+
+Here, we consider the working gene-profile from [Frattini et al, 2018](https://www.nature.com/articles/nature25171), stored as external data in the package. 
+
+
+```{r}
+fname <- system.file("extdata", package="massiveGST")
+fname <- file.path(fname, "pre_ranked_list.txt")
+geneProfile <- get_geneProfile(fname)
+class(geneProfile)
+head(geneProfile)
+tail(geneProfile)
+```
+
+## getting gene-sets from msigdbr
+
+[msigdbr package](https://CRAN.R-project.org/package=msigdbr) is an R distribution of the most recent release of the [MSigDB](https://www.gsea-msigdb.org/gsea/msigdb/) collection of gene-sets. The function get_geneSets_from_msigdbr is a wrapper allowing the creation of a data structure for following gene-set enrichment analysis. Function parameters are those of the msigdbr function, except for 'what', allowing to choose the coding of the gene names. 
+
+This example extracts gene-sets where the gene-names are the gene symbols. Other possibilities have been specified in the 'man' fo the functions, and essentially they are the names of the columns of the data frame retrieved by the msigdbr function. 
+
+```{r}
+geneSets <- get_geneSets_from_msigdbr(category = "H", what = "gene_symbol")
+class(geneSets)
+head(names(geneSets))
+```
+
+Optionally, the gene-sets collection can be stored in gmt formatted file 
+```{r}
+fname <- file.path(tempdir(), "hallmarks.gmt")
+write_geneSets_to_gmt(geneSets, fileName = fname)
+```
+and retrieved with the code
+```{r}
+fname <- file.path(tempdir(), "hallmarks.gmt")
+tmp <- get_geneSets_from_local_files(fname)
+
+class(geneSets)
+head(names(geneSets))
+```
+
+# Running the analysis with alternative = "two.sided"
+```{r, eval = TRUE}
+system.time({ans <- massiveGST(geneProfile, geneSets, alternative = "two.sided")})
+class(ans)
+ans[1:6,]
+```
+
+The analysis result is essentially a data frame; the first class 'mGST' allows hooking other methods to handle the output.
+
+The results can be saved in tab-separated value (tsv) format or an XLS format file.
+```{r, eval=FALSE}
+fname <- file.path(tempdir(), "massiveGST_results.tsv")
+save_as_tsv(ans, file_name = fname)
+
+fname <- file.path(tempdir(), "massiveGST_results.xls")
+save_as_xls(ans, file_name = fname)
+```
+
+## The summary method.
+The summary function allows customizing the result of the analysis. 
+```{r}
+summary(ans)[1:10,]
+```
+
+With it:  
+
+-  The ordering of the table can be chosen. 
+```{r}
+summary(ans, order_by = "NES")[1:10,]
+summary(ans, order_by = "p.value")[1:10,]
+summary(ans, order_by = "bonferroni")[1:10,]
+```
+
+-  Some columns can be removed.  
+```{r}
+(tmp <- summary(ans, order_by = "p.value", cols_to_remove = c("BH.value", "B.value"))[1:10,])
+```
+
+-  The [formattable package](https://CRAN.R-project.org/package=formattable) can be invoked to get a more readable table.   
+```{r}
+summary(ans, as.formattable = TRUE)
+summary(ans, order_by = "p.value", cols_to_remove = c("BH.value", "B.value"), as.formattable = TRUE)
+```
+
+The value of the summary method is invisible, but it is a data frame.
+```{r}
+tmp
+```
+
+
+
+## Trimming the table fo results
+Three functions allow to remove rows from the results table as need. The output of these function can be formatted with the summary method.
+
+The first function removes the non significant gene-sets. By default, a 5\% level of significance is applied to BH.values (Benijamini and Hockberg adjustment of the p.values)
+```{r, eval = TRUE}
+summary(cut_by_significance(ans), as.formattable = TRUE)
+```
+As a toy example, ...
+```{r}
+summary(cut_by_significance(ans, level_of_significance = 0.01, where = "bonferroni"),
+        cols_to_remove = c("BH.value", "NES", "size"), 
+        order_by = "logit2NES",
+        as.formattable = TRUE)
+```
+
+The functions cut_by_NES and cut_by_logit2NES remove the rows having a NES/logit2NES below a given threshold. They are equivalent, in fact
+
+\[logit2NES = \log_2 \frac{NES}{1-NES},\] and back
+\[NES = \frac{2^{logit2NES}}{1+2^{logit2NES}}.\]
+
+The advantage of representing the Normalized Enrichment Score ($NES$) as $logit2NES$ is that this last is a signed value: positive means association with the genes of the treatment group, while a negative value signals the association with the control samples. The default thresholds are set to 0.6 and 0.58 for $NES$ and $logit2NES$. These values say that the probability of association of the gene-set with the treatment group is 1.5 higher than the case of association with the control group. 
+
+Trimming the table of results according to the $NES$/$logit2NES$ means giving much more attention to the descriptive interpretation of the NES as a measure of strongness of association. Given a gene-set, the $NES$ is the percentile rank associated with the gene-set, seen as a single value (the average of the ranks), in the universe of the genes outside the gene-set.  
+
+
+```{r}
+tmp <- cut_by_significance(ans)
+summary(cut_by_logit2NES(tmp), as.formattable = TRUE, order_by = "NES")
+summary(cut_by_NES(tmp), as.formattable = TRUE, order_by = "NES")
+```
+
+ 
+## Plotting the analysis
+The results can be displayed two-way: a bar plot and a network graph. The corresponding functions provide a graphical rendering of the table in input in both cases. Then, eventually, the table has to be trimmed according to significance or NES. 
+```{r bar-plot, eval = TRUE}
+plot(ans)
+```
+
+
+A meaningful display follows.
+```{r}
+plot(cut_by_significance(ans), top = 30)
+```
+
+Here, the maximum number of bars has been restricted to 30.
+
+
+The horizontal axis (signed-NES) is a linear transformation of the NES: 
+\[signed\mbox-NES =  2\cdot NES - 1\]
+necessary to a) signal the direction of the association, and b) to bound the bars between -1.0 and 1.0
+
+
+
+The network plot needs to specify 'as.network = TRUE' and provide the gene-sets collection.
+```{r network}
+plot(cut_by_significance(ans), gene_sets = geneSets, as.network = TRUE)
+```
+
+The similarity $S(A, B)$ between two gene-sets $A$ and $B$ comes from the convex combination 
+\[S(A,B)= \epsilon \cdot \delta_1(A, B)+ (1-\epsilon)\cdot \delta_0(A, B),\]
+with $0\leq \epsilon \leq 1$, and $\delta_0$ is the Jaccard similarity, while $\delta_1$ is the overlap index. $logit2NES$ controls the color of the balls: red for those with positive values (associated with the treatment), green otherwise. $actualSize$ controls the dimension of the balls.
+
+
+# A more intensive analysis: playing with more than 10,000 gene-sets
+Here, we show a more serious analysis. A larger collection of gene-sets have be considered. 
+
+The nature of the gene profile included in the package is strictly according to the treatment versus control logic. In this case, 9 fusion FGFR3-TACC3 positive samples have been compared to 535 other samples. The interest is in the treatment, and then the analysis requires the alternative hypothesis "greater". 
+```{r, eval = TRUE}
+system.time({C5BP_gs <- get_geneSets_from_msigdbr(category = "C5", 
+                                                  subcategory = "BP", 
+                                                  what = "gene_symbol")})
+
+system.time({C5MF_gs <- get_geneSets_from_msigdbr(category = "C5", 
+                                                  subcategory = "MF", 
+                                                  what = "gene_symbol")})
+
+
+system.time({C5CC_gs <- get_geneSets_from_msigdbr(category = "C5", 
+                                                  subcategory = "CC", 
+                                                  what = "gene_symbol")})
+
+system.time({H_gs <- get_geneSets_from_msigdbr(category = "H", 
+                                               what = "gene_symbol")})
+
+# merging gene-sets collections
+geneSets <- c(C5MF_gs, C5CC_gs, C5BP_gs, H_gs)
+length(geneSets)
+
+# running the analysis
+system.time({ans <- massiveGST(geneProfile, geneSets, 
+                               alternative = "greater")})
+
+# removing non significant results
+ans <- cut_by_significance(ans, 
+                           level_of_significance = 0.05, 
+                           where = "bonferroni")
+
+# Tabular results
+summary(ans, as.formattable = TRUE, cols_to_remove = "BH.value")
+
+# Saving the table
+fname <- file.path(tempdir(), "massiveGST_results.tsv")
+save_as_xls(ans, file_name = fname)
+
+# Inspecting the network of gene-sets
+plot(ans, gene_sets = geneSets, as.network = TRUE)
+```
+
+
+# Session info
+```{r}
+sessionInfo()
+```
+
