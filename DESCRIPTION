@@ -1,8 +1,8 @@
 Package: massiveGST
 Type: Package
 Title: Competitive Gene Sets Test with the Mann-Whitney-Wilcoxon Test
-Version: 1.0
-Date: 2022-03-22
+Version: 1.0.1
+Date: 2022-05-30
 Authors@R: 
         person(given = "Stefano Maria",
                family = "Pagnotta",
