@@ -1,0 +1,13 @@
+bibentry(bibtype = "article",
+    title = "massiveGST: A Mann-Whitney-Wilcoxon Gene-Set Test Tool That Gives Meaning to Gene-Set Enrichment Analysis",
+    author = personList(
+        person(given="Luigi", family="Cerulo"),
+        person(given="Stefano M.", family="Pagnotta")
+    ),
+    journal = "Entropy",
+    volume = "24",
+    year = "2022",
+    number = "5",
+    issn = "1099-4300",
+    doi = "10.3390/e24050739"
+)
